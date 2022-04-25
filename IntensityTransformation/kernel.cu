@@ -9,77 +9,71 @@
 #include "OldAlgo.h"
 #include "MinMaxStretching.cuh"
 
+int outputPerformanceTest()
+{
+  //Loading data
+  auto mat = cv::imread("CorrectedImage.bmp");
+  auto gray = mat.clone();
+  int count = gray.rows * gray.cols;
+  cv::cvtColor(mat, gray, cv::COLOR_RGB2GRAY);
+  cv::Mat cpuMat = gray.clone();
+  cv::Mat gpuMat = gray.clone();
+
+  unsigned char* image = gray.data;
+
+  //CPU
+
+  OldAlgo algo(image, count);
+  auto algoStart = std::chrono::high_resolution_clock::now();
+  auto outputImage = algo.stretch();
+  auto algoEnd = std::chrono::high_resolution_clock::now();
+
+  std::cout << "OldAlgo: " << std::chrono::duration_cast<std::chrono::microseconds>(algoEnd - algoStart).count() << " microseconds" << std::endl;
+
+  cpuMat.data = outputImage;
+
+  cv::imwrite("outputImage.jpg", cpuMat);
+
+
+  //CUDA
+
+
+  MinMaxStretching gpuAlgo(image, count);
+  algoStart = std::chrono::high_resolution_clock::now();
+  auto gpuOutputImage = gpuAlgo.stretchGpu();
+  algoEnd = std::chrono::high_resolution_clock::now();
+  std::cout << "NewAlgo: " << std::chrono::duration_cast<std::chrono::microseconds>(algoEnd - algoStart).count() << " microseconds" << std::endl;
+
+  //Move output from GPU to RAM
+  gpuMat.data = gpuOutputImage.getData();
+  cudaDeviceReset();
+
+  cv::imwrite("outputCuda.jpg", gpuMat);
+
+  return 0;
+}
+
+int outputGpuCyclePerformanceTest()
+{
+  auto algoStart = std::chrono::high_resolution_clock::now();
+  //Loading data
+  auto gpuMat = cv::imread("CorrectedImage.bmp", cv::IMREAD_GRAYSCALE);
+  int count = gpuMat.rows * gpuMat.cols;
+
+  MinMaxStretching* gpuAlgo = new MinMaxStretching(gpuMat.data, count);
+  auto gpuOutputImage = gpuAlgo->stretchGpu();
+
+  //Move output from GPU to RAM
+  gpuMat.data = gpuOutputImage.getData();
+  cv::imwrite("outputCuda.jpg", gpuMat);
+  delete gpuAlgo;
+  auto algoEnd = std::chrono::high_resolution_clock::now();
+  std::cout << "NewAlgo: " << std::chrono::duration_cast<std::chrono::microseconds>(algoEnd - algoStart).count() << " microseconds" << std::endl;
+  cudaDeviceReset();
+  return 0;
+}
+
 int main()
 {
-    //Loading data
-    auto mat = cv::imread("image.jpg");
-    auto gray = mat.clone();
-    int count = gray.rows * gray.cols;
-    cv::cvtColor(mat, gray, cv::COLOR_RGB2GRAY);
-    cv::Mat cpuMat = mat.clone();
-    cv::Mat gpuMat = mat.clone();
-
-    unsigned char* image = new unsigned char[count];
-
-    int index = 0;
-    for (int y = 0; y < gray.rows; y++)
-    {
-        for (int x = 0; x < gray.cols; x++)
-        {
-            image[index] = gray.at<uchar>(y, x);
-            index++;
-        }
-    }
-
-    //CPU
-
-    OldAlgo algo(image, count);
-    auto algoStart = std::chrono::high_resolution_clock::now();
-    auto outputImage = algo.stretch();
-    auto algoEnd = std::chrono::high_resolution_clock::now();
-
-    std::cout << "OldAlgo: " << std::chrono::duration_cast<std::chrono::microseconds>(algoEnd - algoStart).count() << " microseconds" << std::endl;
-
-    index = 0;
-    for (int y = 0; y < gray.rows; y++)
-    {
-        for (int x = 0; x < gray.cols; x++)
-        {
-            cpuMat.at<uchar>(y, x) = outputImage[index];
-            index++;
-        }
-    }
-
-    cv::imwrite("outputImage.jpg", gray);
-    
-
-    //CUDA
-
-
-    MinMaxStretching gpuAlgo(image, count);
-    algoStart = std::chrono::high_resolution_clock::now();
-    auto gpuOutputImage = gpuAlgo.stretchGpu();
-    algoEnd = std::chrono::high_resolution_clock::now();
-    std::cout << "NewAlgo: " << std::chrono::duration_cast<std::chrono::microseconds>(algoEnd - algoStart).count() << " microseconds" << std::endl;
-
-    unsigned char* gpuOutputImage1 = new unsigned char[count];
-
-    //Move output from GPU to RAM
-    cudaMemcpy(gpuOutputImage1, gpuOutputImage, count * sizeof(unsigned char), cudaMemcpyDeviceToHost);
-    cudaFree(gpuOutputImage);
-    cudaDeviceReset();
-
-    index = 0;
-    for (int y = 0; y < gray.rows; y++)
-    {
-        for (int x = 0; x < gray.cols; x++)
-        {
-            gpuMat.at<uchar>(y, x) = gpuOutputImage1[index];
-            index++;
-        }
-    }
-
-    cv::imwrite("outputCuda.jpg", gray);
-
-    return 0;
+    return outputPerformanceTest();
 }

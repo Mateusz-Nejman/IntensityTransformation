@@ -41,29 +41,26 @@ MinMaxStretching::MinMaxStretching(unsigned char* values, int count, bool fromGp
     _threadsPerBlock = 1024;
     _blockCount = _count / _threadsPerBlock;
 
-    if (fromGpuValues)
-    {
-        _values = values;
-    }
-    else
-    {
-        cudaMalloc(&_values, _count * sizeof(unsigned char));
-        cudaMemcpy(_values, values, count * sizeof(unsigned char), cudaMemcpyHostToDevice);
-    }
+    cudaMalloc(&_values, _count * sizeof(unsigned char));
+    cudaMemcpy(_values, values, count * sizeof(unsigned char), fromGpuValues ? cudaMemcpyDeviceToDevice : cudaMemcpyHostToDevice);
+}
+
+MinMaxStretching::~MinMaxStretching()
+{
+  cudaFree(gpuDarkestBrightest);
+  cudaFree(gpuDifference);
+  cudaFree(gpuOutput);
+  cudaFree(gpuStretchValues);
+  cudaFree(_values);
 }
 
 unsigned char* MinMaxStretching::stretch()
 {
-    unsigned char* gpuOutput = stretchGpu();
-    unsigned char* output = new unsigned char[_count];
-    //Move output from GPU to RAM
-    cudaMemcpy(output, gpuOutput, _count * sizeof(unsigned char), cudaMemcpyDeviceToHost);
-    cudaFree(gpuOutput);
-
-    return output;
+    auto gpuOutput = stretchGpu();
+    return gpuOutput.getData();
 }
 
-unsigned char* MinMaxStretching::stretchGpu()
+MinMaxStretching MinMaxStretching::stretchGpu()
 {
     float* gpuDifference;
     unsigned char* gpuDarkestBrightest;
@@ -84,9 +81,27 @@ unsigned char* MinMaxStretching::stretchGpu()
     stretchKernel << <_blockCount, _threadsPerBlock >> > (gpuOutput, _values, gpuStretchValues, _count);
 
     //Free GPU memory
-    cudaFree(gpuDifference);
-    cudaFree(gpuDarkestBrightest);
-    cudaFree(gpuStretchValues);
+    //cudaFree(gpuDifference);
+    //cudaFree(gpuDarkestBrightest);
+    //cudaFree(gpuStretchValues);
 
-    return gpuOutput;
+    return MinMaxStretching(gpuOutput, _count, true);
+}
+
+void MinMaxStretching::minMaxToCheck()
+{
+  //Allocating & filling
+  cudaMalloc(&gpuDarkestBrightest, 2 * sizeof(unsigned char));
+  cudaMemcpy(gpuDarkestBrightest, _values, 2 * sizeof(unsigned char), cudaMemcpyDeviceToDevice);
+  cudaMalloc(&gpuDifference, sizeof(float));
+  cudaMalloc(&gpuOutput, _count * sizeof(unsigned char));
+  minMaxKernel << <_blockCount, _threadsPerBlock >> > (_values, _count, gpuDarkestBrightest);
+  calculateDifferenceKernel << <1, 1 >> > (gpuDarkestBrightest, gpuDifference);
+}
+
+unsigned char* MinMaxStretching::getData()
+{
+  unsigned char* data = new unsigned char[_count];
+  cudaMemcpy(data,_values,_count * sizeof(unsigned char), cudaMemcpyDeviceToHost);
+  return data;
 }
